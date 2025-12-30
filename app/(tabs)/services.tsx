@@ -185,10 +185,13 @@ export default function ServicesScreen() {
     }
 
     setIsSubmitting(true);
+    console.log('[ServiceForm] Submitting form data:', formData);
 
     try {
-      const apiUrl = process.env.EXPO_PUBLIC_RORK_API_BASE_URL || 'https://rork.app/p/fk1n8ph6aajjh30ipabh1';
-      const response = await fetch(`${apiUrl}/api/service-request`, {
+      const apiUrl = 'https://euyqhbwusqtxdzjwayqr.supabase.co/functions/v1/api';
+      console.log('[ServiceForm] Sending POST request to:', apiUrl);
+      
+      const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -203,11 +206,15 @@ export default function ServicesScreen() {
           contact_time: formData.contact_time,
         }),
       });
+      
+      console.log('[ServiceForm] Response status:', response.status);
 
       if (response.ok) {
+        console.log('[ServiceForm] Request submitted successfully');
         Alert.alert(
           'Success!',
-          'Your service request has been submitted. We\'ll contact you soon!',
+          'Request submitted successfully!',
+
           [{
             text: 'OK',
             onPress: () => {
@@ -226,17 +233,19 @@ export default function ServicesScreen() {
           }]
         );
       } else {
-        const errorData = await response.json().catch(() => ({}));
+        console.error('[ServiceForm] Request failed with status:', response.status);
+        const errorText = await response.text().catch(() => 'Unknown error');
+        console.error('[ServiceForm] Error response:', errorText);
         Alert.alert(
           'Error',
-          errorData.message || 'Failed to submit request. Please try again.',
+          errorText || 'Failed to submit request. Please try again.',
         );
       }
-    } catch (error) {
-      console.error('Error submitting form:', error);
+    } catch (error: any) {
+      console.error('[ServiceForm] Error submitting form:', error);
       Alert.alert(
         'Error',
-        'Failed to submit request. Please check your connection and try again.',
+        error.message || 'Failed to submit request. Please check your connection and try again.',
       );
     } finally {
       setIsSubmitting(false);
@@ -258,8 +267,9 @@ export default function ServicesScreen() {
       description = 'Describe the problem you\'re experiencing';
     }
 
-    const homeTypes = ['Single Family', 'Multi-Family', 'Condo', 'Apartment'];
-    const mainIssues = ['High energy bills', 'Drafty rooms', 'Ice dams', 'Comfort issues', 'Other'];
+    const homeTypes = ['Single Family', 'Multi-Family', 'Condo', 'Townhouse', 'Other'];
+    const mainIssues = ['High Energy Bills', 'Comfort Issues', 'Drafts', 'Ice Dams', 'Moisture Problems', 'General Assessment'];
+    const contactTimes = ['Morning', 'Afternoon', 'Evening'];
 
     return (
       <ScrollView 
@@ -377,15 +387,30 @@ export default function ServicesScreen() {
           </View>
 
           <View style={styles.formGroup}>
-            <Text style={styles.formLabel}>Preferred Contact Time</Text>
-            <TextInput
-              style={styles.formInput}
-              placeholder="e.g., Weekday mornings, After 5pm"
-              placeholderTextColor={Colors.textLight}
-              value={formData.contact_time}
-              onChangeText={(text) => setFormData({ ...formData, contact_time: text })}
-              editable={!isSubmitting}
-            />
+            <Text style={styles.formLabel}>Preferred Contact Time (Optional)</Text>
+            <View style={styles.pickerContainer}>
+              {contactTimes.map((time) => (
+                <TouchableOpacity
+                  key={time}
+                  style={[
+                    styles.pickerOption,
+                    formData.contact_time === time && styles.pickerOptionSelected,
+                  ]}
+                  onPress={() => setFormData({ ...formData, contact_time: time })}
+                  activeOpacity={0.7}
+                  disabled={isSubmitting}
+                >
+                  <Text
+                    style={[
+                      styles.pickerOptionText,
+                      formData.contact_time === time && styles.pickerOptionTextSelected,
+                    ]}
+                  >
+                    {time}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
 
           <View style={styles.formActions}>
