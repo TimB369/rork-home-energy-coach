@@ -1,13 +1,22 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, TextInput, Share, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, TextInput, Share, Alert, ActivityIndicator } from 'react-native';
 import { Stack } from 'expo-router';
-import { Wrench, Star, Users, ChevronRight, Camera, Send } from 'lucide-react-native';
-import * as ImagePicker from 'expo-image-picker';
+import { Wrench, Star, Users, ChevronRight, Send } from 'lucide-react-native';
 
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 
 type ServiceType = 'audit' | 'insulation' | 'issue' | null;
+
+interface FormData {
+  name: string;
+  phone: string;
+  email: string;
+  address: string;
+  home_type: string;
+  main_issue: string;
+  contact_time: string;
+}
 
 export default function ServicesScreen() {
   const { referralCode, submitReview } = useApp();
@@ -15,7 +24,16 @@ export default function ServicesScreen() {
   const [selectedService, setSelectedService] = useState<ServiceType>(null);
   const [rating, setRating] = useState<number>(0);
   const [feedback, setFeedback] = useState('');
-  const [selectedImages, setSelectedImages] = useState<string[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formData, setFormData] = useState<FormData>({
+    name: '',
+    phone: '',
+    email: '',
+    address: '',
+    home_type: '',
+    main_issue: '',
+    contact_time: '',
+  });
 
   const handleServiceRequest = (type: ServiceType) => {
     setSelectedService(type);
@@ -37,53 +55,6 @@ export default function ServicesScreen() {
     setRating(0);
     setFeedback('');
     setActiveScreen('menu');
-  };
-
-  const handleAddPhotos = async () => {
-    try {
-      if (Platform.OS === 'web') {
-        const result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
-          allowsMultipleSelection: true,
-          quality: 0.8,
-        });
-
-        if (!result.canceled && result.assets) {
-          const newImages = result.assets.map((asset) => asset.uri);
-          setSelectedImages((prev) => [...prev, ...newImages].slice(0, 5));
-        }
-      } else {
-        const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        
-        if (!permissionResult.granted) {
-          Alert.alert(
-            'Permission Required',
-            'Please allow access to your photo library to upload images.',
-            [{ text: 'OK' }]
-          );
-          return;
-        }
-
-        const result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
-          allowsMultipleSelection: true,
-          quality: 0.8,
-          selectionLimit: 5,
-        });
-
-        if (!result.canceled && result.assets) {
-          const newImages = result.assets.map((asset) => asset.uri);
-          setSelectedImages((prev) => [...prev, ...newImages].slice(0, 5));
-        }
-      }
-    } catch (error) {
-      console.error('Error picking images:', error);
-      Alert.alert(
-        'Error',
-        'Failed to select images. Please try again.',
-        [{ text: 'OK' }]
-      );
-    }
   };
 
   const renderMenu = () => (
@@ -187,6 +158,91 @@ export default function ServicesScreen() {
     </ScrollView>
   );
 
+  const handleFormSubmit = async () => {
+    if (!formData.name.trim()) {
+      Alert.alert('Required Field', 'Please enter your name');
+      return;
+    }
+    if (!formData.phone.trim()) {
+      Alert.alert('Required Field', 'Please enter your phone number');
+      return;
+    }
+    if (!formData.email.trim()) {
+      Alert.alert('Required Field', 'Please enter your email');
+      return;
+    }
+    if (!formData.address.trim()) {
+      Alert.alert('Required Field', 'Please enter your address');
+      return;
+    }
+    if (!formData.home_type) {
+      Alert.alert('Required Field', 'Please select your home type');
+      return;
+    }
+    if (!formData.main_issue) {
+      Alert.alert('Required Field', 'Please select the main issue');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const apiUrl = process.env.EXPO_PUBLIC_RORK_API_BASE_URL || 'https://rork.app/p/fk1n8ph6aajjh30ipabh1';
+      const response = await fetch(`${apiUrl}/api/service-request`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: formData.name,
+          phone: formData.phone,
+          email: formData.email,
+          address: formData.address,
+          home_type: formData.home_type,
+          main_issue: formData.main_issue,
+          contact_time: formData.contact_time,
+        }),
+      });
+
+      if (response.ok) {
+        Alert.alert(
+          'Success!',
+          'Your service request has been submitted. We\'ll contact you soon!',
+          [{
+            text: 'OK',
+            onPress: () => {
+              setActiveScreen('menu');
+              setSelectedService(null);
+              setFormData({
+                name: '',
+                phone: '',
+                email: '',
+                address: '',
+                home_type: '',
+                main_issue: '',
+                contact_time: '',
+              });
+            },
+          }]
+        );
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        Alert.alert(
+          'Error',
+          errorData.message || 'Failed to submit request. Please try again.',
+        );
+      }
+    } catch (error) {
+      console.error('Error submitting form:', error);
+      Alert.alert(
+        'Error',
+        'Failed to submit request. Please check your connection and try again.',
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const renderServiceRequest = () => {
     let title = 'Request Service';
     let description = '';
@@ -196,11 +252,14 @@ export default function ServicesScreen() {
       description = 'Schedule a comprehensive energy assessment';
     } else if (selectedService === 'insulation') {
       title = 'Request Insulation / Air Sealing';
-      description = 'Get an estimate for improving your home&apos;s efficiency';
+      description = 'Get an estimate for improving your home\'s efficiency';
     } else if (selectedService === 'issue') {
       title = 'Report a Comfort Issue';
-      description = 'Describe the problem you&apos;re experiencing';
+      description = 'Describe the problem you\'re experiencing';
     }
+
+    const homeTypes = ['Single Family', 'Multi-Family', 'Condo', 'Apartment'];
+    const mainIssues = ['High energy bills', 'Drafty rooms', 'Ice dams', 'Comfort issues', 'Other'];
 
     return (
       <ScrollView 
@@ -213,64 +272,121 @@ export default function ServicesScreen() {
           <Text style={styles.formDescription}>{description}</Text>
 
           <View style={styles.formGroup}>
-            <Text style={styles.formLabel}>Name</Text>
+            <Text style={styles.formLabel}>Name *</Text>
             <TextInput
               style={styles.formInput}
               placeholder="Your name"
               placeholderTextColor={Colors.textLight}
+              value={formData.name}
+              onChangeText={(text) => setFormData({ ...formData, name: text })}
+              editable={!isSubmitting}
             />
           </View>
 
           <View style={styles.formGroup}>
-            <Text style={styles.formLabel}>Phone</Text>
+            <Text style={styles.formLabel}>Phone *</Text>
             <TextInput
               style={styles.formInput}
               placeholder="(555) 123-4567"
               placeholderTextColor={Colors.textLight}
               keyboardType="phone-pad"
+              value={formData.phone}
+              onChangeText={(text) => setFormData({ ...formData, phone: text })}
+              editable={!isSubmitting}
             />
           </View>
 
           <View style={styles.formGroup}>
-            <Text style={styles.formLabel}>Email</Text>
+            <Text style={styles.formLabel}>Email *</Text>
             <TextInput
               style={styles.formInput}
               placeholder="your@email.com"
               placeholderTextColor={Colors.textLight}
               keyboardType="email-address"
               autoCapitalize="none"
+              value={formData.email}
+              onChangeText={(text) => setFormData({ ...formData, email: text })}
+              editable={!isSubmitting}
             />
           </View>
 
           <View style={styles.formGroup}>
-            <Text style={styles.formLabel}>
-              {selectedService === 'issue' ? 'Describe the Issue' : 'Additional Notes'}
-            </Text>
+            <Text style={styles.formLabel}>Address *</Text>
             <TextInput
-              style={[styles.formInput, styles.formTextArea]}
-              placeholder={selectedService === 'issue' 
-                ? 'Tell us about the comfort issues you&apos;re experiencing...'
-                : 'Any specific concerns or questions?'
-              }
+              style={styles.formInput}
+              placeholder="123 Main St, City, State"
               placeholderTextColor={Colors.textLight}
-              multiline
-              numberOfLines={4}
-              textAlignVertical="top"
+              value={formData.address}
+              onChangeText={(text) => setFormData({ ...formData, address: text })}
+              editable={!isSubmitting}
             />
           </View>
 
-          <TouchableOpacity 
-            style={styles.photoUploadButton} 
-            activeOpacity={0.7}
-            onPress={handleAddPhotos}
-          >
-            <Camera size={20} color={Colors.primary} />
-            <Text style={styles.photoUploadText}>
-              {selectedImages.length > 0 
-                ? `${selectedImages.length} Photo${selectedImages.length > 1 ? 's' : ''} Selected` 
-                : 'Add Photos (Optional)'}
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.formGroup}>
+            <Text style={styles.formLabel}>Home Type *</Text>
+            <View style={styles.pickerContainer}>
+              {homeTypes.map((type) => (
+                <TouchableOpacity
+                  key={type}
+                  style={[
+                    styles.pickerOption,
+                    formData.home_type === type && styles.pickerOptionSelected,
+                  ]}
+                  onPress={() => setFormData({ ...formData, home_type: type })}
+                  activeOpacity={0.7}
+                  disabled={isSubmitting}
+                >
+                  <Text
+                    style={[
+                      styles.pickerOptionText,
+                      formData.home_type === type && styles.pickerOptionTextSelected,
+                    ]}
+                  >
+                    {type}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.formGroup}>
+            <Text style={styles.formLabel}>Main Issue *</Text>
+            <View style={styles.pickerContainer}>
+              {mainIssues.map((issue) => (
+                <TouchableOpacity
+                  key={issue}
+                  style={[
+                    styles.pickerOption,
+                    formData.main_issue === issue && styles.pickerOptionSelected,
+                  ]}
+                  onPress={() => setFormData({ ...formData, main_issue: issue })}
+                  activeOpacity={0.7}
+                  disabled={isSubmitting}
+                >
+                  <Text
+                    style={[
+                      styles.pickerOptionText,
+                      formData.main_issue === issue && styles.pickerOptionTextSelected,
+                    ]}
+                  >
+                    {issue}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.formGroup}>
+            <Text style={styles.formLabel}>Preferred Contact Time</Text>
+            <TextInput
+              style={styles.formInput}
+              placeholder="e.g., Weekday mornings, After 5pm"
+              placeholderTextColor={Colors.textLight}
+              value={formData.contact_time}
+              onChangeText={(text) => setFormData({ ...formData, contact_time: text })}
+              editable={!isSubmitting}
+            />
+          </View>
 
           <View style={styles.formActions}>
             <TouchableOpacity
@@ -278,22 +394,35 @@ export default function ServicesScreen() {
               onPress={() => {
                 setActiveScreen('menu');
                 setSelectedService(null);
+                setFormData({
+                  name: '',
+                  phone: '',
+                  email: '',
+                  address: '',
+                  home_type: '',
+                  main_issue: '',
+                  contact_time: '',
+                });
               }}
               activeOpacity={0.7}
+              disabled={isSubmitting}
             >
               <Text style={styles.cancelButtonTextLarge}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.submitButtonLarge}
-              onPress={() => {
-                setActiveScreen('menu');
-                setSelectedService(null);
-                setSelectedImages([]);
-              }}
+              style={[styles.submitButtonLarge, isSubmitting && styles.submitButtonDisabled]}
+              onPress={handleFormSubmit}
               activeOpacity={0.7}
+              disabled={isSubmitting}
             >
-              <Send size={18} color={Colors.surface} />
-              <Text style={styles.submitButtonTextLarge}>Submit Request</Text>
+              {isSubmitting ? (
+                <ActivityIndicator color={Colors.surface} />
+              ) : (
+                <>
+                  <Send size={18} color={Colors.surface} />
+                  <Text style={styles.submitButtonTextLarge}>Submit Request</Text>
+                </>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -463,7 +592,6 @@ export default function ServicesScreen() {
                 setSelectedService(null);
                 setRating(0);
                 setFeedback('');
-                setSelectedImages([]);
               }}
               style={{ marginLeft: -8 }}
             >
@@ -744,5 +872,32 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600' as const,
     color: Colors.textSecondary,
+  },
+  pickerContainer: {
+    gap: 8,
+  },
+  pickerOption: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.background,
+  },
+  pickerOptionSelected: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primary + '10',
+  },
+  pickerOptionText: {
+    fontSize: 15,
+    color: Colors.text,
+    fontWeight: '500' as const,
+  },
+  pickerOptionTextSelected: {
+    color: Colors.primary,
+    fontWeight: '600' as const,
+  },
+  submitButtonDisabled: {
+    opacity: 0.6,
   },
 });
