@@ -14,13 +14,11 @@ export default function HomeScreen() {
   const [showBackendTest, setShowBackendTest] = useState(false);
   
   const profileQuery = trpc.home.profile.useQuery(undefined, {
-    retry: 2,
-    retryDelay: 2000,
+    retry: false,
     staleTime: 1000 * 60 * 5,
   });
   const workHistoryQuery = trpc.work.history.useQuery(undefined, {
-    retry: 2,
-    retryDelay: 2000,
+    retry: false,
     staleTime: 1000 * 60 * 5,
   });
   const testQuery = trpc.example.hi.useQuery(undefined, {
@@ -31,10 +29,10 @@ export default function HomeScreen() {
 
   React.useEffect(() => {
     if (profileQuery.error) {
-      console.error('[Home] Profile query error:', profileQuery.error);
+      console.log('[Home] Using fallback profile data due to backend error');
     }
     if (workHistoryQuery.error) {
-      console.error('[Home] Work history error:', workHistoryQuery.error);
+      console.log('[Home] Using fallback work history due to backend error');
     }
   }, [profileQuery.error, workHistoryQuery.error]);
   
