@@ -6,37 +6,42 @@ import superjson from "superjson";
 export const trpc = createTRPCReact<AppRouter>();
 
 const getBaseUrl = () => {
-  // 1. Prioritize Rork-specific env var as requested
+  // 1. Prioritize Rork-specific env var (includes the /p/<projectId> prefix)
   if (process.env.EXPO_PUBLIC_RORK_API_BASE_URL) {
     console.log('[tRPC] Using Rork env base URL:', process.env.EXPO_PUBLIC_RORK_API_BASE_URL);
     return process.env.EXPO_PUBLIC_RORK_API_BASE_URL;
   }
 
-  // 2. Fallback to standard env var
+  // 2. Optional local/dev override
   if (process.env.EXPO_PUBLIC_API_BASE_URL) {
     console.log('[tRPC] Using env base URL:', process.env.EXPO_PUBLIC_API_BASE_URL);
     return process.env.EXPO_PUBLIC_API_BASE_URL;
   }
-  
-  // 3. Web fallback
+
+  // 3. Web fallback: use a RELATIVE url.
+  // Using window.location.origin drops the /p/<projectId> path and can lead to "Access Denied" HTML.
   if (typeof window !== 'undefined') {
-    const origin = window.location.origin;
-    console.log('[tRPC] Using window origin:', origin);
-    return origin;
+    console.log('[tRPC] Using relative base URL on web');
+    return '';
   }
-  
+
   console.log('[tRPC] No base URL available, using empty string');
   return '';
 };
 
 const getFinalUrl = () => {
   let url = getBaseUrl();
-  
+
+  if (!url) {
+    // Relative fetch (works for web + when backend is proxied under the app path)
+    return '/api/trpc';
+  }
+
   // Normalize: remove trailing slash
   if (url.endsWith('/')) {
     url = url.slice(0, -1);
   }
-  
+
   // Normalize: remove trailing '/api' to avoid duplication
   // This prevents .../api/api/trpc
   if (url.endsWith('/api')) {
@@ -44,7 +49,6 @@ const getFinalUrl = () => {
     console.log('[tRPC] Stripped trailing /api from base URL');
   }
 
-  // Always append /api/trpc
   return `${url}/api/trpc`;
 };
 
@@ -62,44 +66,63 @@ export const trpcClient = trpc.createClient({
         };
       },
       async fetch(url, options) {
-        console.log('[tRPC] Fetching:', url);
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 30000);
-          
-          const response = await fetch(url, {
+        const urlString =
+          typeof url === 'string'
+            ? url
+            : url instanceof URL
+              ? url.toString()
+              : (url as Request | undefined)?.url ?? String(url);
+
+        console.log('[tRPC] Fetching:', urlString);
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+        const attemptFetch = async (targetUrl: string) => {
+          const resp = await fetch(targetUrl, {
             ...options,
             signal: controller.signal,
           });
-          
-          clearTimeout(timeoutId);
-          console.log('[tRPC] Response status:', response.status);
-          
+          console.log('[tRPC] Response status for', targetUrl, ':', resp.status);
+          return resp;
+        };
+
+        try {
+          let response = await attemptFetch(urlString);
+
           const contentType = response.headers.get('content-type') || '';
           console.log('[tRPC] Response content-type:', contentType);
-          
-          if (contentType.includes('text/html')) {
-            const text = await response.text();
-            console.error('[tRPC] Received HTML instead of JSON (likely 404 page):', text.substring(0, 200));
-            throw new Error('Received HTML response - check that backend is running and URL is correct');
-          }
-          
-          if (!response.ok) {
-            const text = await response.text();
-            console.error('[tRPC] Error response:', response.status, text);
-            // Try to parse JSON error if possible
-            try {
-               const json = JSON.parse(text);
-               console.error('[tRPC] JSON Error details:', json);
-            } catch (e) {
-               // ignore
+
+          const isHtml = contentType.includes('text/html');
+
+          // If we got an HTML "Access Denied" / 404 page, try the alternate mount path.
+          if (isHtml || !response.ok) {
+            const text = await response.clone().text();
+            console.error('[tRPC] Unexpected response (HTML or non-2xx):', response.status, text.substring(0, 200));
+
+            const apiSegment = '/api/trpc';
+            if (urlString.includes(apiSegment)) {
+              const fallbackUrl = urlString.replace(apiSegment, '/trpc');
+              console.log('[tRPC] Attempting fallback URL:', fallbackUrl);
+              response = await attemptFetch(fallbackUrl);
+
+              const fallbackType = response.headers.get('content-type') || '';
+              const fallbackIsHtml = fallbackType.includes('text/html');
+              if (fallbackIsHtml || !response.ok) {
+                const fallbackText = await response.clone().text();
+                console.error('[tRPC] Fallback also returned unexpected response:', response.status, fallbackText.substring(0, 200));
+                throw new Error('Received HTML response - check that backend is running and URL is correct');
+              }
+            } else {
+              throw new Error('Received HTML response - check that backend is running and URL is correct');
             }
-            throw new Error(`HTTP ${response.status}: ${text}`);
           }
-          
+
+          clearTimeout(timeoutId);
           return response;
         } catch (error: any) {
-          if (error.name === 'AbortError') {
+          clearTimeout(timeoutId);
+          if (error?.name === 'AbortError') {
             console.error('[tRPC] Request timeout');
             throw new Error('Request timeout - server may be starting up');
           }
